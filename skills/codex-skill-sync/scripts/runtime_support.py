@@ -47,8 +47,12 @@ def probe_python(exe):
             return None
         # A module spec alone does not prove that the native Tk library loads.
         if data['tk']:
-            data['tk'] = subprocess.run([exe, '-I', '-c', 'import tkinter; import _tkinter'],
-                                       capture_output=True, timeout=15).returncode == 0
+            # Apple's legacy Tk 8.5 can import successfully but render blank windows.
+            check = subprocess.run([exe, '-I', '-c',
+                'import sys,tkinter; import _tkinter; '
+                'sys.exit(0 if sys.platform != "darwin" or tkinter.TkVersion >= 8.6 else 1)'],
+                capture_output=True, timeout=15)
+            data['tk'] = check.returncode == 0
         return {'python_exe': exe, 'python_version': data['version'], 'gui': bool(data['tk'])}
     except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
         return None
@@ -143,9 +147,10 @@ def discover_runtime(python_exe=None, git_exe=None, cli=False):
     chosen = probe_python(python_exe) if python_exe else None
     if python_exe and chosen is None:
         raise RuntimeError('指定 Python 无法运行或版本低于 3.9：' + str(python_exe))
-    if chosen is None:
+    if chosen is None or (not cli and not chosen['gui']):
         seen = set()
-        fallback = None
+        fallback = chosen
+        chosen = None
         for candidate in python_candidates():
             resolved = _executable(candidate)
             if not resolved or resolved in seen:

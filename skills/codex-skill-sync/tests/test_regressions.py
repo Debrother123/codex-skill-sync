@@ -141,6 +141,11 @@ class RuntimeTests(unittest.TestCase):
         def probe(n):return {'python_exe':n,'python_version':[3,12,1],'gui':n=='codex'}
         with patch.object(rt,'python_candidates',return_value=iter(['workbuddy','codex'])),patch.object(rt,'_executable',side_effect=lambda x:x),patch.object(rt,'probe_python',side_effect=probe),patch.object(rt,'git_candidates',return_value=iter(['portablegit'])),patch.object(rt,'probe_git',side_effect=lambda x:x):
             r=rt.discover_runtime();self.assertEqual(r['python_exe'],'codex');self.assertEqual(r['git_exe'],'portablegit')
+    def test_saved_legacy_gui_runtime_falls_back(self):
+        def probe(n):return {'python_exe':n,'python_version':[3,12,1],'gui':n=='modern'}
+        with patch.object(rt,'python_candidates',return_value=iter(['legacy','modern'])),patch.object(rt,'_executable',side_effect=lambda x:x),patch.object(rt,'probe_python',side_effect=probe),patch.object(rt,'git_candidates',return_value=iter([])):
+            self.assertEqual(rt.discover_runtime(python_exe='legacy')['python_exe'],'modern')
+
     def test_windows_launcher_absolute_paths(self):
         meta={'skills_dir':'C:/用户 空格/skills','shortcut_dir':'C:/用户 空格/Desktop','runtime':{'gui':True,'python_exe':'C:/Runtime Space/python.exe','git_exe':'C:/Portable Git/cmd/git.exe'}}
         _,text=b.launcher_content('windows-test',meta,windows=True)
