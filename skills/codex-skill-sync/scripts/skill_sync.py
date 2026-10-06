@@ -61,7 +61,8 @@ def git(repo, *args, allow_fail=False):
 
 
 def files(root):
-    if any(p.is_symlink() for p in [root, *root.parents]):
+    from local_sources import is_link
+    if any(is_link(p) for p in [root, *root.parents]):
         raise RuntimeError('不自动同步符号链接目录：' + root.name)
     if not root.exists():
         return None
@@ -75,7 +76,7 @@ def files(root):
         for name in dirs + names:
             if name.startswith('.env') and name in dirs:
                 raise RuntimeError('发现潜在私密目录，停止同步：' + name)
-            if (Path(parent) / name).is_symlink():
+            if is_link(Path(parent) / name):
                 raise RuntimeError('发现符号链接，请先处理：' + name)
         dirs[:] = [n for n in dirs if n not in IGNORE]
         for name in names:
@@ -163,10 +164,17 @@ def shared_skill(c, repo, name):
     return repo/'skills'/name if name=='codex-skill-sync' else shared_root(c,repo)/name
 
 
+def local_skill(c, name):
+    import local_sources
+    return local_sources.resolve(c,name)
+
+
 def available(c, repo):
-    roots=[Path(c['root']),shared_root(c,repo)]
-    names={p.name for r in roots if r.is_dir() for p in r.iterdir()
-           if p.is_dir() and not p.is_symlink() and (p/'SKILL.md').is_file() and SAFE_NAME.fullmatch(p.name)}
+    import local_sources
+    local=local_sources.inventory(c)
+    aliases={alias for info in local.values() for alias in info['aliases']}
+    remote=shared_root(c,repo)
+    names=set(local)|{p.name for p in remote.iterdir() if p.is_dir() and not p.is_symlink() and (p/'SKILL.md').is_file() and SAFE_NAME.fullmatch(p.name) and p.name not in aliases} if remote.is_dir() else set(local)
     if (repo/'skills'/'codex-skill-sync'/'SKILL.md').is_file():names.add('codex-skill-sync')
     return sorted(names)
 
@@ -236,7 +244,7 @@ def plan(c, repo, direction):
     actions = []
     blocked = []
     for n in c['selected']:
-        a, b = Path(c['root'])/n, shared_skill(c, repo, n)
+        a, b = local_skill(c,n), shared_skill(c, repo, n)
         local, shared = support.snapshot(a,c), support.snapshot(b,c)
         baseline = support.baseline(c,n,a,b)
         if local == shared:
@@ -271,9 +279,11 @@ def sync(direction, preview=False, confirm=None, selected=None, message=None):
     if not c['selected']:
         print('尚未选择 skills，请用菜单 2。')
         return
+    import local_sources
+    local_sources.check_targets(c,c['selected'])
     repo = repo_check(c)
     for n in c['selected']:
-        support.register(c,n,Path(c['root'])/n,shared_skill(c,repo,n))
+        support.register(c,n,local_skill(c,n),shared_skill(c,repo,n))
     save_state()
     support.check_dependencies(c,repo,direction)
     actions = plan(c, repo, direction)
@@ -308,6 +318,7 @@ def sync(direction, preview=False, confirm=None, selected=None, message=None):
         if plan(c, repo, direction) != actions:
             raise RuntimeError('预览后文件发生变化，请重新执行。')
         for n, source, target, snapshot in actions:
+            if local_skill(c,n)!=(source if direction=='upload' else target):raise RuntimeError('链接目标在操作期间变化，请重新预览。')
             backup=replace_tree(source, target, snapshot)
             records.append({'skill':n,'target':str(target),'backup':backup,'kind':'replace' if backup else 'new','hashes':snapshot})
         if direction == 'upload':
@@ -321,7 +332,7 @@ def sync(direction, preview=False, confirm=None, selected=None, message=None):
             if not remote or remote.split()[0] != sha:
                 raise RuntimeError('远程 SHA 未能核对，未登记成功。')
     for n in c['selected']:
-        support.register(c,n,Path(c['root'])/n,shared_skill(c,repo,n))
+        support.register(c,n,local_skill(c,n),shared_skill(c,repo,n))
     c['last_sha'] = git(repo, 'rev-parse', '--verify', 'HEAD', allow_fail=True)
     c['last_run']={'direction':direction,'selected':list(c['selected']),'applied':[r['skill'] for r in records],'sha':c['last_sha']}
     receipt=HOME/'receipts'/(str(time.time_ns())+'.json')
@@ -375,13 +386,14 @@ def cli():
     import bootstrap
     parser=argparse.ArgumentParser(description='Skills 同步助手：可无头执行，默认仅预览')
     parser.add_argument('--profile')
-    parser.add_argument('command',nargs='?',default='menu',choices=['menu','sync','connect','select','diff','resolve','auth','policy'])
+    parser.add_argument('command',nargs='?',default='menu',choices=['menu','sync','connect','select','diff','resolve','auth','policy','link'])
     parser.add_argument('--direction',choices=['upload','download'],default='download')
     parser.add_argument('--skills',nargs='+');parser.add_argument('--all',action='store_true')
     parser.add_argument('--yes',action='store_true');parser.add_argument('--url')
     parser.add_argument('--skill');parser.add_argument('--take',choices=['local','remote','merge','export'],default='export')
     parser.add_argument('--merged-dir');parser.add_argument('--comparison',choices=['lf','bytes'])
     parser.add_argument('--device',action='store_true')
+    parser.add_argument('--target');parser.add_argument('--revoke',action='store_true')
     args=parser.parse_args()
     profile=args.profile or bootstrap.registry().get('active')
     if profile:bootstrap.activate(profile)
@@ -401,6 +413,12 @@ def cli():
             if not args.skills:parser.error('select 需要 --skills')
             return set_selection(args.skills)
         c=load();repo=Path(c['repo'])
+        if args.command=='link':
+            import local_sources
+            if not args.skill:parser.error('link 需要 --skill')
+            if args.revoke:return local_sources.revoke(args.skill)
+            if not args.target or not args.yes:parser.error('link 需要 --target 真实目录 --yes；授权只登记目录，不执行同步')
+            print(local_sources.approve(args.skill,args.target));return
         if args.command=='policy':
             if not args.comparison:parser.error('policy 需要 --comparison')
             c['comparison']=args.comparison;save(CONFIG,c);return

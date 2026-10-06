@@ -58,7 +58,7 @@ def accepted(c,n,local,remote):
 def diff(c,n,repo):
     import skill_sync as e
     if not e.SAFE_NAME.fullmatch(n):raise RuntimeError('无效 skill 名称')
-    local=Path(c['root'])/n;remote=e.shared_skill(c,repo,n)
+    local=e.local_skill(c,n);remote=e.shared_skill(c,repo,n)
     a=e.files(local) or {};b=e.files(remote) or {};lines=[]
     for rel in sorted(a.keys()|b.keys()):
         if a.get(rel)==b.get(rel):continue
@@ -92,9 +92,9 @@ def check_dependencies(c,repo,direction):
     import skill_sync as e
     seen=set();missing=[]
     def source(name):
-        return Path(c['root'])/name if direction=='upload' else e.shared_skill(c,repo,name)
+        return e.local_skill(c,name) if direction=='upload' else e.shared_skill(c,repo,name)
     def destination(name):
-        return e.shared_skill(c,repo,name) if direction=='upload' else Path(c['root'])/name
+        return e.shared_skill(c,repo,name) if direction=='upload' else e.local_skill(c,name)
     def walk(n,path):
         if n in seen:return
         seen.add(n)
@@ -122,7 +122,7 @@ def resolve(n,choice,merged_dir=None,confirm=None):
     import skill_sync as e
     c=e.load();repo=e.repo_check(c)
     if not e.SAFE_NAME.fullmatch(n):raise RuntimeError('无效 skill 名称')
-    local=Path(c['root'])/n;remote=e.shared_skill(c,repo,n)
+    local=e.local_skill(c,n);remote=e.shared_skill(c,repo,n)
     before_l=e.files(local);before_r=e.files(remote)
     if before_l is None or before_r is None:raise RuntimeError('冲突处理要求双方都存在；新增请使用普通同步。')
     print(diff(c,n,repo))
@@ -148,6 +148,7 @@ def resolve(n,choice,merged_dir=None,confirm=None):
     (folder/'diff.txt').write_text(diff(c,n,repo),encoding='utf-8')
     print('双方冲突副本：',folder)
     if choice=='export':return str(folder)
+    if e.local_skill(c,n)!=local:raise RuntimeError('链接目标已变化，请重新比较。')
     if choice in {'remote','merge'}:
         e.replace_tree(remote if choice=='remote' else merged,local,wanted)
     if choice=='remote':register(c,n,local,remote)

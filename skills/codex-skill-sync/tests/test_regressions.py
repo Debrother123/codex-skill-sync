@@ -16,6 +16,7 @@ import sync_support as support
 import runtime_support as rt
 import bootstrap as b
 import catalog
+import local_sources
 
 
 class SyncTests(unittest.TestCase):
@@ -72,6 +73,61 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(catalog.scope_names(['demo','hidden'],['demo'],'all'),['demo','hidden'])
         self.skill(self.repo/'skills',text=b'different')
         self.assertEqual(catalog.entry(self.c,self.repo,'demo')['status'],'有冲突 / 需比较')
+
+    def make_link(self,name='demo',target=None):
+        target=target or self.skill(self.base/'outside',name)
+        try:(self.root/name).symlink_to(target,target_is_directory=True)
+        except OSError as error:self.skipTest('Symlink privilege unavailable: '+str(error))
+        return target
+
+    def test_link_discovery_authorization_upload_and_download(self):
+        target=self.make_link()
+        self.assertIn('demo',e.available(self.c,self.repo))
+        self.assertEqual(catalog.entry(self.c,self.repo,'demo')['status'],'待确认目录')
+        with self.assertRaises(RuntimeError):self.run_sync('upload')
+        self.assertFalse((self.repo/'skills/demo').exists())
+        local_sources.approve('demo',str(target));self.run_sync('upload')
+        self.assertEqual((self.repo/'skills/demo/SKILL.md').read_bytes(),(target/'SKILL.md').read_bytes())
+        (self.repo/'skills/demo/SKILL.md').write_text('remote update')
+        self.publish();self.run_sync('download')
+        self.assertTrue((self.root/'demo').is_symlink())
+        self.assertEqual((target/'SKILL.md').read_text(),'remote update')
+        self.assertTrue(list((e.HOME/'backups').glob('*-demo')))
+        local_sources.revoke('demo')
+        with self.assertRaises(RuntimeError):e.local_skill(e.load(),'demo')
+        self.assertTrue(target.exists())
+
+    def test_retarget_and_broken_link_blocked(self):
+        target=self.make_link();local_sources.approve('demo',str(target))
+        another=self.skill(self.base/'another')
+        (self.root/'demo').unlink();(self.root/'demo').symlink_to(another,target_is_directory=True)
+        with self.assertRaises(RuntimeError):self.run_sync('upload')
+        with self.assertRaises(RuntimeError):local_sources.approve('demo',str(target))
+        (self.root/'demo').unlink();(self.root/'demo').symlink_to(self.base/'missing',target_is_directory=True)
+        self.assertIn('demo',e.available(e.load(),self.repo))
+        self.assertEqual(catalog.entry(e.load(),self.repo,'demo')['status'],'链接失效')
+        with self.assertRaises(RuntimeError):self.run_sync('download')
+
+    def test_alias_deduplication_and_duplicate_write_guard(self):
+        target=self.make_link();self.make_link('alias',target)
+        self.assertEqual(e.available(self.c,self.repo),['demo'])
+        local_sources.approve('demo',str(target));local_sources.approve('alias',str(target))
+        with self.assertRaises(RuntimeError):
+            with contextlib.redirect_stdout(io.StringIO()):e.sync('upload',False,lambda:True,selected=['demo','alias'])
+
+    def test_nested_link_is_not_followed(self):
+        target=self.make_link();(target/'nested').symlink_to(self.root,target_is_directory=True)
+        with self.assertRaises(RuntimeError):local_sources.approve('demo',str(target))
+        self.assertNotIn('demo',e.load().get('link_targets',{}))
+
+    def test_link_changes_during_confirmation_abort(self):
+        target=self.make_link();local_sources.approve('demo',str(target))
+        another=self.skill(self.base/'another')
+        def confirm():
+            (self.root/'demo').unlink();(self.root/'demo').symlink_to(another,target_is_directory=True);return True
+        with self.assertRaises(RuntimeError):
+            with contextlib.redirect_stdout(io.StringIO()):e.sync('upload',False,confirm)
+        self.assertFalse((self.repo/'skills/demo').exists())
 
     def test_lf_identical_registers_preview_without_rewrite(self):
         local=self.skill(self.root,text=b'# Skill\r\nline\r\n');self.skill(self.repo/'skills',text=b'# Skill\nline\n');self.publish()

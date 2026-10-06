@@ -2,7 +2,7 @@
 
 在 Mac、Windows、Codex、WorkBuddy 等智能体环境之间，按勾选名单同步 skills。Python 3.9+、Git；图形界面还需 Tkinter，无 Tk 时可用 CLI。
 
-支持名称/功能搜索、组合筛选、每次操作单独选择范围、再次提交更新、冲突比较与备份、独立环境状态及 Windows 运行时探测。
+支持顶层链接型 skill 识别与真实目录授权、保留链接的更新、名称/功能搜索、组合筛选、每次操作单独选择范围、再次提交更新、冲突比较与备份、独立环境状态及 Windows 运行时探测。
 
 ## 给另一个智能体的安装指令
 
@@ -22,7 +22,7 @@
 
 ## 验证和限制
 
-运行 `python skills/codex-skill-sync/tests/test_regressions.py`。Mac 上 17 项回归测试通过，1 项 Windows 专用启动测试跳过；Mac GUI 的搜索、筛选和操作范围已测试。Windows 与 WorkBuddy 的真实界面及认证需目标环境验证。
+运行 `python skills/codex-skill-sync/tests/test_regressions.py`。Mac 上 23 项回归测试通过，1 项 Windows 专用启动测试跳过；Mac GUI 的搜索、筛选和操作范围已测试。Windows 与 WorkBuddy 的真实界面及认证需目标环境验证。
 
 支持 GitHub 仓库与一层 skill 目录。每个环境一个数据仓库/版本来源；不自动安装 Git/Python，不自动合并内容冲突，也不复制智能体登录凭据。敏感文件检查只能发现部分常见风险，上传前仍应查看内容。
 

@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import skill_sync as engine
+import local_sources
 
 
 def description(root):
@@ -27,10 +28,15 @@ def description(root):
 
 
 def entry(c,repo,name):
-    local=Path(c['root'])/name;remote=engine.shared_skill(c,repo,name)
+    info=local_sources.inspect(c,name)
+    local=Path(info['target']);remote=engine.shared_skill(c,repo,name)
     has_local=local.exists();has_remote=remote.exists()
     origin='两边都有' if has_local and has_remote else ('仅本机有' if has_local else '仅 GitHub 有')
-    result={'name':name,'description':description(local if has_local else remote),'origin':origin}
+    result={'name':name,'description':description(local if has_local and not info['problem'] else remote),'origin':origin,'source':info}
+    if info['linked'] and (info['problem'] or not info['approved']):
+        result['status']='链接失效' if info['problem'] else '待确认目录'
+        if info['problem']:result['error']=info['problem']
+        return result
     try:
         a=engine.support.snapshot(local,c);b=engine.support.snapshot(remote,c)
         if not (repo/'.git').exists():status='未连接 / 未核验'
