@@ -67,3 +67,8 @@ python scripts/skill_sync.py --profile <id> resolve --skill <name> --take merge 
 工具会检查被同步 Python 脚本的语法，不导入、不执行业务代码，不生成 __pycache__。若脚本要求更高 Python 版本，应换用该版本验证。成功表示文件落地/上传和哈希核验，业务调用仍由宿主智能体验证。
 
 在 Mac 的隔离测试可模拟 Windows 路径、无 PATH Python、无 Tk 的候选筛选及启动器内容，但不能代替 Windows 双击和真实 GCM 授权测试。最终 Windows/WorkBuddy 验收由对应电脑完成。
+
+
+## 点击继续后提示操作占用
+
+新版使用操作系统文件锁，程序退出后会自动释放占用，并恢复异常退出留下的新版标记。操作失败会弹出具体原因。旧版空的 running.lock 无法证明所有者，仍需接入智能体先确认没有同步进程，再备份移走；不能仅按文件年龄删除锁。

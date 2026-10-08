@@ -398,9 +398,8 @@ def cli():
     profile=args.profile or bootstrap.registry().get('active')
     if profile:bootstrap.activate(profile)
     bootstrap.BASE.mkdir(parents=True,exist_ok=True)
-    lock=bootstrap.BASE/'running.lock'
-    try:fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)
-    except FileExistsError:raise RuntimeError('已有同步操作或异常退出遗留的锁；确认后由智能体处理。')
+    from operation_lock import OperationLock
+    lock=OperationLock(bootstrap.BASE).acquire()
     try:
         if args.command=='menu':return main()
         if args.command=='auth':
@@ -433,7 +432,7 @@ def cli():
         if args.command=='diff':repo_check(c);print(support.diff(c,args.skill,repo));return
         if args.take!='export' and not args.yes:parser.error('采用版本或登记合并需要 --yes；可先 diff/export')
         return support.resolve(args.skill,args.take,args.merged_dir,confirm=lambda:True)
-    finally:lock.unlink(missing_ok=True)
+    finally:lock.release()
 
 
 

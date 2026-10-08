@@ -13,6 +13,7 @@ import skill_sync as engine
 import bootstrap
 import catalog
 import local_sources
+from operation_lock import OperationLock
 
 
 class App:
@@ -167,6 +168,8 @@ class App:
                 event,answer,prompt=data
                 answer.append(messagebox.askyesno('确认操作',prompt))
                 event.set()
+            elif kind=='error':
+                messagebox.showerror('操作未完成',data,parent=self.root)
             elif kind=='done':
                 self.progress.stop();self.activity.configure(text=data)
                 self.busy=False
@@ -186,20 +189,17 @@ class App:
         def task():
             old=sys.stdout;sys.stdout=self
             # One app-wide lock prevents concurrent self-updates across profiles.
-            lock=bootstrap.BASE/'running.lock';owned=False
+            lock=OperationLock(bootstrap.BASE)
             outcome='操作已结束 · 结果与备份位置见日志'
             try:
-                bootstrap.BASE.mkdir(parents=True,exist_ok=True)
-                fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd);owned=True
+                lock.acquire()
                 fn()
-            except FileExistsError:
-                outcome='未完成 · 请检查已有操作或遗留锁，再重试'
-                print('未完成：已有同步操作运行，或上次异常退出留有锁。请当前智能体检查。')
             except Exception as e:
-                outcome='未完成 · 查看日志中的原因，修复后重试'
+                outcome='未完成 · 原因已弹出，处理后可重试'
                 print('未完成：',e)
+                self.events.put(('error',str(e)))
             finally:
-                if owned:lock.unlink(missing_ok=True)
+                lock.release()
                 sys.stdout=old;self.events.put(('done',outcome))
         threading.Thread(target=task,daemon=True).start()
     def state(self):
